@@ -1,0 +1,14 @@
+{
+  "name": "dyad-chat-study",
+  "version": "1.0.0",
+  "description": "Simple chat app for pairing Prolific participants in a dyad study",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}

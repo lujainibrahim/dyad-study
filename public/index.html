@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Partner Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2128;
+      --surface-light: #242d35;
+      --border: #2f3942;
+      --text: #e7e9ea;
+      --text-muted: #71767b;
+      --accent: #1d9bf0;
+      --accent-hover: #1a8cd8;
+      --partner-bubble: #2f3336;
+      --your-bubble: #1d9bf0;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Screens */
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* Waiting Room */
+    #waiting-screen {
+      background: 
+        radial-gradient(ellipse at 20% 80%, rgba(29, 155, 240, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(29, 155, 240, 0.05) 0%, transparent 50%),
+        var(--bg);
+    }
+
+    .waiting-content {
+      text-align: center;
+      max-width: 400px;
+    }
+
+    .waiting-content h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+
+    .waiting-content p {
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--surface-light);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Chat Screen */
+    #chat-screen {
+      min-height: 100vh;
+      justify-content: flex-start;
+      padding: 0;
+    }
+
+    #chat-screen.active {
+      display: flex;
+    }
+
+    .chat-container {
+      width: 100%;
+      max-width: 700px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      margin: 0 auto;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+
+    .chat-header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-header h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .partner-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #00ba7c;
+      border-radius: 50%;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .message {
+      max-width: 75%;
+      padding: 0.75rem 1rem;
+      border-radius: 1.25rem;
+      line-height: 1.4;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.partner {
+      background: var(--partner-bubble);
+      align-self: flex-start;
+      border-bottom-left-radius: 0.25rem;
+    }
+
+    .message.you {
+      background: var(--your-bubble);
+      align-self: flex-end;
+      border-bottom-right-radius: 0.25rem;
+    }
+
+    .system-message {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      padding: 0.5rem;
+    }
+
+    .chat-input-area {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .input-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    #message-input {
+      flex: 1;
+      padding: 0.875rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 1.5rem;
+      background: var(--bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #message-input:focus {
+      border-color: var(--accent);
+    }
+
+    #message-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .btn {
+      padding: 0.875rem 1.5rem;
+      border: none;
+      border-radius: 1.5rem;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .finish-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .finish-status {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .finish-status.ready {
+      color: #00ba7c;
+    }
+
+    .btn-finish {
+      background: var(--surface-light);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-finish:hover {
+      background: var(--border);
+    }
+
+    .btn-finish.clicked {
+      background: #00ba7c;
+      border-color: #00ba7c;
+      color: white;
+    }
+
+    /* Error Screen */
+    #error-screen {
+      background: var(--bg);
+    }
+
+    .error-content {
+      text-align: center;
+      max-width: 400px;
+    }
+
+    .error-content h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: #f4212e;
+    }
+
+    .error-content p {
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Complete Screen */
+    #complete-screen {
+      background: 
+        radial-gradient(ellipse at 50% 50%, rgba(0, 186, 124, 0.1) 0%, transparent 50%),
+        var(--bg);
+    }
+
+    .complete-content {
+      text-align: center;
+      max-width: 400px;
+    }
+
+    .complete-content h1 {
+      font-size: 1.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .complete-content p {
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.6;
+    }
+
+    .redirect-notice {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <!-- Waiting Screen -->
+  <div id="waiting-screen" class="screen active">
+    <div class="waiting-content">
+      <h1>Waiting for your partner...</h1>
+      <p>Please stay on this page. You'll be connected as soon as your partner arrives.</p>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <!-- Chat Screen -->
+  <div id="chat-screen" class="screen">
+    <div class="chat-container">
+      <div class="chat-header">
+        <h2>Chat with Partner</h2>
+        <div class="partner-status">
+          <div class="status-dot"></div>
+          <span>Partner connected</span>
+        </div>
+      </div>
+      
+      <div class="messages" id="messages">
+        <div class="system-message">You're now connected! Say hello to your partner.</div>
+      </div>
+      
+      <div class="chat-input-area">
+        <div class="input-row">
+          <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+          <button class="btn btn-primary" id="send-btn">Send</button>
+        </div>
+        <div class="finish-row">
+          <div class="finish-status" id="finish-status">Click "Finish" when you're done chatting</div>
+          <button class="btn btn-finish" id="finish-btn">Finish</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Screen -->
+  <div id="error-screen" class="screen">
+    <div class="error-content">
+      <h1>Connection Issue</h1>
+      <p id="error-message">Something went wrong. Please contact the researcher.</p>
+    </div>
+  </div>
+
+  <!-- Complete Screen -->
+  <div id="complete-screen" class="screen">
+    <div class="complete-content">
+      <h1>Conversation Complete!</h1>
+      <p>Thank you for participating. You will now be redirected to complete the final survey.</p>
+      <p class="redirect-notice">Redirecting in <span id="countdown">5</span> seconds...</p>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    // DOM elements
+    const screens = {
+      waiting: document.getElementById('waiting-screen'),
+      chat: document.getElementById('chat-screen'),
+      error: document.getElementById('error-screen'),
+      complete: document.getElementById('complete-screen')
+    };
+
+    const messagesContainer = document.getElementById('messages');
+    const messageInput = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-btn');
+    const finishBtn = document.getElementById('finish-btn');
+    const finishStatus = document.getElementById('finish-status');
+    const errorMessage = document.getElementById('error-message');
+    const countdown = document.getElementById('countdown');
+
+    let myNumber = null;
+    let completionUrl = '';
+    let iFinished = false;
+    let partnerFinished = false;
+
+    // Get Prolific ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const prolificId = urlParams.get('PROLIFIC_PID') || urlParams.get('prolific_pid');
+
+    // Show specific screen
+    function showScreen(name) {
+      Object.values(screens).forEach(s => s.classList.remove('active'));
+      screens[name].classList.add('active');
+    }
+
+    // Add message to chat
+    function addMessage(text, isYou) {
+      const msg = document.createElement('div');
+      msg.className = `message ${isYou ? 'you' : 'partner'}`;
+      msg.textContent = text;
+      messagesContainer.appendChild(msg);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Add system message
+    function addSystemMessage(text) {
+      const msg = document.createElement('div');
+      msg.className = 'system-message';
+      msg.textContent = text;
+      messagesContainer.appendChild(msg);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Update finish status
+    function updateFinishStatus() {
+      if (iFinished && partnerFinished) {
+        finishStatus.textContent = 'Both ready! Completing...';
+        finishStatus.classList.add('ready');
+      } else if (iFinished) {
+        finishStatus.textContent = 'Waiting for your partner to finish...';
+      } else if (partnerFinished) {
+        finishStatus.textContent = 'Your partner is ready to finish';
+        finishStatus.classList.add('ready');
+      }
+    }
+
+    // Initialize
+    async function init() {
+      if (!prolificId) {
+        errorMessage.textContent = 'Missing Prolific ID. Please use the link provided in Qualtrics.';
+        showScreen('error');
+        return;
+      }
+
+      // Get completion URL from server
+      try {
+        const res = await fetch('/api/config');
+        const config = await res.json();
+        completionUrl = config.completionUrl;
+      } catch (e) {
+        console.error('Failed to get config:', e);
+      }
+
+      // Join the waiting room
+      socket.emit('join', prolificId);
+    }
+
+    // Socket events
+    socket.on('waiting', () => {
+      showScreen('waiting');
+    });
+
+    socket.on('matched', (data) => {
+      myNumber = data.yourNumber;
+      showScreen('chat');
+    });
+
+    socket.on('message', (data) => {
+      const isYou = data.sender === myNumber;
+      addMessage(data.text, isYou);
+    });
+
+    socket.on('youFinished', () => {
+      iFinished = true;
+      finishBtn.classList.add('clicked');
+      finishBtn.textContent = 'Done ✓';
+      finishBtn.disabled = true;
+      updateFinishStatus();
+    });
+
+    socket.on('partnerFinished', () => {
+      partnerFinished = true;
+      addSystemMessage('Your partner has clicked Finish');
+      updateFinishStatus();
+    });
+
+    socket.on('complete', (data) => {
+      showScreen('complete');
+      
+      // Countdown and redirect
+      let count = 5;
+      const interval = setInterval(() => {
+        count--;
+        countdown.textContent = count;
+        if (count <= 0) {
+          clearInterval(interval);
+          // Redirect with Prolific ID
+          const url = completionUrl + (completionUrl.includes('?') ? '&' : '?') + 'PROLIFIC_PID=' + data.prolificId;
+          window.location.href = url;
+        }
+      }, 1000);
+    });
+
+    socket.on('partnerDisconnected', () => {
+      addSystemMessage('Your partner has disconnected. Please wait for them to reconnect or contact the researcher.');
+    });
+
+    socket.on('disconnect', () => {
+      addSystemMessage('Connection lost. Trying to reconnect...');
+    });
+
+    socket.on('connect', () => {
+      if (myNumber !== null) {
+        // Reconnected during chat - this is a simplified handling
+        addSystemMessage('Reconnected!');
+      }
+    });
+
+    // UI events
+    sendBtn.addEventListener('click', () => {
+      const text = messageInput.value.trim();
+      if (text) {
+        socket.emit('message', text);
+        messageInput.value = '';
+      }
+    });
+
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendBtn.click();
+      }
+    });
+
+    finishBtn.addEventListener('click', () => {
+      if (!iFinished) {
+        socket.emit('finished');
+      }
+    });
+
+    // Start
+    init();
+  </script>
+</body>
+</html>
