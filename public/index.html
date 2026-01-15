@@ -315,9 +315,33 @@
       line-height: 1.6;
     }
 
-    .redirect-notice {
+    .completion-code {
+      background: var(--surface);
+      border: 2px solid #00ba7c;
+      border-radius: 0.75rem;
+      padding: 1.25rem 2rem;
+      font-size: 1.5rem;
+      font-weight: 600;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      letter-spacing: 0.1em;
+      color: #00ba7c;
+      margin: 1.5rem 0;
+      user-select: all;
+      cursor: pointer;
+    }
+
+    .completion-code:hover {
+      background: var(--surface-light);
+    }
+
+    .code-instructions {
       font-size: 0.875rem;
       color: var(--text-muted);
+    }
+
+    .btn-finish:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
     }
   </style>
 </head>
@@ -352,8 +376,8 @@
           <button class="btn btn-primary" id="send-btn">Send</button>
         </div>
         <div class="finish-row">
-          <div class="finish-status" id="finish-status">Click "Finish" when you're done chatting</div>
-          <button class="btn btn-finish" id="finish-btn">Finish</button>
+          <div class="finish-status" id="finish-status">Exchange at least 7 messages to finish (0/7)</div>
+          <button class="btn btn-finish" id="finish-btn" disabled>Finish</button>
         </div>
       </div>
     </div>
@@ -371,8 +395,9 @@
   <div id="complete-screen" class="screen">
     <div class="complete-content">
       <h1>Conversation Complete!</h1>
-      <p>Thank you for participating. You will now be redirected to complete the final survey.</p>
-      <p class="redirect-notice">Redirecting in <span id="countdown">5</span> seconds...</p>
+      <p>Thank you for chatting! Please copy the code below and enter it back in your Qualtrics survey.</p>
+      <div class="completion-code" id="completion-code">CHAT-XXXXXXXX</div>
+      <p class="code-instructions">Copy this code, then return to your Qualtrics tab.</p>
     </div>
   </div>
 
@@ -394,11 +419,14 @@
     const finishBtn = document.getElementById('finish-btn');
     const finishStatus = document.getElementById('finish-status');
     const errorMessage = document.getElementById('error-message');
-    const countdown = document.getElementById('countdown');
+    const completionCodeEl = document.getElementById('completion-code');
 
     let myNumber = null;
     let iFinished = false;
     let partnerFinished = false;
+    let canFinish = false;
+    let messageCount = 0;
+    const MIN_MESSAGES = 7;
 
     // Get Prolific ID and participant type from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -439,6 +467,11 @@
       } else if (partnerFinished) {
         finishStatus.textContent = 'Your partner is ready to finish';
         finishStatus.classList.add('ready');
+      } else if (canFinish) {
+        finishStatus.textContent = 'You can now finish the chat when ready';
+        finishStatus.classList.add('ready');
+      } else {
+        finishStatus.textContent = `Exchange at least ${MIN_MESSAGES} messages to finish (${messageCount}/${MIN_MESSAGES})`;
       }
     }
 
@@ -467,6 +500,21 @@
     socket.on('message', (data) => {
       const isYou = data.sender === myNumber;
       addMessage(data.text, isYou);
+      
+      // Update message count
+      messageCount = data.messageCount || messageCount + 1;
+      if (data.canFinish) {
+        canFinish = true;
+        finishBtn.disabled = false;
+      }
+      updateFinishStatus();
+    });
+
+    socket.on('canFinish', () => {
+      canFinish = true;
+      finishBtn.disabled = false;
+      addSystemMessage('You can now click Finish when you\'re ready to end the chat.');
+      updateFinishStatus();
     });
 
     socket.on('youFinished', () => {
@@ -486,18 +534,18 @@
     socket.on('complete', (data) => {
       showScreen('complete');
       
-      // Countdown and redirect
-      let count = 5;
-      const interval = setInterval(() => {
-        count--;
-        countdown.textContent = count;
-        if (count <= 0) {
-          clearInterval(interval);
-          // Redirect with Prolific ID to their specific completion survey
-          const url = data.completionUrl + (data.completionUrl.includes('?') ? '&' : '?') + 'PROLIFIC_PID=' + data.prolificId;
-          window.location.href = url;
-        }
-      }, 1000);
+      // Show the completion code
+      completionCodeEl.textContent = data.completionCode;
+      
+      // Copy to clipboard when clicked
+      completionCodeEl.addEventListener('click', () => {
+        navigator.clipboard.writeText(data.completionCode).then(() => {
+          completionCodeEl.style.borderColor = '#1d9bf0';
+          setTimeout(() => {
+            completionCodeEl.style.borderColor = '#00ba7c';
+          }, 1000);
+        });
+      });
     });
 
     socket.on('partnerDisconnected', () => {

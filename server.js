@@ -14,13 +14,19 @@ if (!fs.existsSync(LOGS_DIR)) {
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Configuration - UPDATE THESE URLs
-// Type A = participant who talked to AI first
-// Type B = participant who did survey first
-const COMPLETION_URLS = {
-  A: 'https://yourschool.qualtrics.com/jfe/form/SURVEY_A_COMPLETION_ID',
-  B: 'https://yourschool.qualtrics.com/jfe/form/SURVEY_B_COMPLETION_ID'
-};
+// Configuration
+const MIN_MESSAGES = 7; // Minimum messages before participants can finish
+
+// Generate a unique completion code
+function generateCompletionCode(prolificId, pairId) {
+  const hash = require('crypto')
+    .createHash('sha256')
+    .update(prolificId + pairId + 'secret-salt')
+    .digest('hex')
+    .substring(0, 8)
+    .toUpperCase();
+  return `CHAT-${hash}`;
+}
 
 // In-memory storage
 const waitingRoom = [];           // Participants waiting for a partner
@@ -34,9 +40,9 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// API endpoint to get completion URLs
+// API endpoint to get config
 app.get('/api/config', (req, res) => {
-  res.json({ completionUrls: COMPLETION_URLS });
+  res.json({ minMessages: MIN_MESSAGES });
 });
 
 io.on('connection', (socket) => {
@@ -109,10 +115,20 @@ io.on('connection', (socket) => {
     
     pair.messages.push(messageData);
     
-    // Send to both participants
+    // Send to both participants with message count
+    const messageCount = pair.messages.length;
+    const canFinish = messageCount >= MIN_MESSAGES;
+    
     pair.participants.forEach(p => {
-      p.emit('message', messageData);
+      p.emit('message', { ...messageData, messageCount, canFinish });
     });
+    
+    // Notify when minimum is first reached
+    if (messageCount === MIN_MESSAGES) {
+      pair.participants.forEach(p => {
+        p.emit('canFinish');
+      });
+    }
   });
 
   // Handle "finished" button click
@@ -144,7 +160,8 @@ io.on('connection', (socket) => {
         pairId,
         participants: pair.prolificIds.map((id, idx) => ({
           prolificId: id,
-          type: pair.participantTypes[idx]
+          type: pair.participantTypes[idx],
+          completionCode: generateCompletionCode(id, pairId)
         })),
         startTime: pair.startTime,
         endTime: new Date().toISOString(),
@@ -166,9 +183,8 @@ io.on('connection', (socket) => {
       
       pair.participants.forEach((p, idx) => {
         const prolificId = pair.prolificIds[idx];
-        const participantType = pair.participantTypes[idx];
-        const completionUrl = COMPLETION_URLS[participantType] || COMPLETION_URLS.A;
-        p.emit('complete', { prolificId, completionUrl });
+        const completionCode = generateCompletionCode(prolificId, pairId);
+        p.emit('complete', { prolificId, completionCode });
       });
       
       // Clean up
