@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schedule Chat Session</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #f5f7fa;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: #1a1a1a;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: #333;
+    }
+
+    select {
+      width: 100%;
+      padding: 0.875rem;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: white;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #0066cc;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 1rem;
+      background: #0066cc;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: #0052a3;
+    }
+
+    .btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .success {
+      background: #e8f5e9;
+      border: 1px solid #4caf50;
+      color: #2e7d32;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .success.show {
+      display: block;
+    }
+
+    .code-display {
+      background: #f5f5f5;
+      padding: 1rem;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 1.25rem;
+      text-align: center;
+      margin-top: 1rem;
+      font-weight: bold;
+      color: #0066cc;
+    }
+
+    .error {
+      background: #ffebee;
+      border: 1px solid #f44336;
+      color: #c62828;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .error.show {
+      display: block;
+    }
+
+    .info {
+      background: #e3f2fd;
+      border: 1px solid #2196f3;
+      color: #1565c0;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Schedule Your Chat Session</h1>
+    <p class="subtitle">Pick a time when you can chat with your partner.</p>
+    
+    <div class="info">
+      You'll receive a Prolific message 5 minutes before your scheduled time with a link to join the chat.
+    </div>
+
+    <form id="scheduleForm">
+      <div class="form-group">
+        <label for="timeSlot">Select a time slot:</label>
+        <select id="timeSlot" required>
+          <option value="">Loading time slots...</option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn" id="submitBtn">Schedule Session</button>
+    </form>
+
+    <div class="success" id="successMsg">
+      <strong>✅ Session Scheduled!</strong>
+      <p style="margin-top: 0.5rem;">You'll receive a Prolific message at your scheduled time with the chat link.</p>
+      <p style="margin-top: 0.5rem;">Copy this confirmation code to enter in Qualtrics:</p>
+      <div class="code-display" id="confirmCode">SCHEDULED</div>
+    </div>
+
+    <div class="error" id="errorMsg">
+      Something went wrong. Please try again.
+    </div>
+  </div>
+
+  <script>
+    // Get URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const prolificId = urlParams.get('PROLIFIC_PID') || urlParams.get('prolific_pid');
+    const participantType = urlParams.get('type') || 'A';
+
+    const timeSlotSelect = document.getElementById('timeSlot');
+    const form = document.getElementById('scheduleForm');
+    const successMsg = document.getElementById('successMsg');
+    const errorMsg = document.getElementById('errorMsg');
+    const confirmCode = document.getElementById('confirmCode');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Load time slots
+    async function loadTimeSlots() {
+      try {
+        const response = await fetch('/api/timeslots');
+        const data = await response.json();
+        
+        timeSlotSelect.innerHTML = '<option value="">Select a time...</option>';
+        data.slots.forEach(slot => {
+          const option = document.createElement('option');
+          option.value = slot.time;
+          option.textContent = slot.label;
+          timeSlotSelect.appendChild(option);
+        });
+      } catch (e) {
+        console.error('Error loading time slots:', e);
+        timeSlotSelect.innerHTML = '<option value="">Error loading slots</option>';
+      }
+    }
+
+    // Handle form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      if (!prolificId) {
+        errorMsg.textContent = 'Missing Prolific ID. Please use the link from Qualtrics.';
+        errorMsg.classList.add('show');
+        return;
+      }
+
+      const scheduledTime = timeSlotSelect.value;
+      if (!scheduledTime) {
+        errorMsg.textContent = 'Please select a time slot.';
+        errorMsg.classList.add('show');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Scheduling...';
+      errorMsg.classList.remove('show');
+
+      try {
+        const response = await fetch('/api/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prolificId,
+            type: participantType,
+            scheduledTime
+          })
+        });
+
+        if (response.ok) {
+          // Generate a simple confirmation code
+          const code = 'SCHED-' + prolificId.substring(0, 4).toUpperCase() + '-' + Date.now().toString(36).toUpperCase().slice(-4);
+          confirmCode.textContent = code;
+          successMsg.classList.add('show');
+          form.style.display = 'none';
+        } else {
+          throw new Error('Failed to schedule');
+        }
+      } catch (e) {
+        errorMsg.textContent = 'Error scheduling session. Please try again.';
+        errorMsg.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Schedule Session';
+      }
+    });
+
+    // Initialize
+    loadTimeSlots();
+  </script>
+</body>
+</html>
