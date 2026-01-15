@@ -397,13 +397,13 @@
     const countdown = document.getElementById('countdown');
 
     let myNumber = null;
-    let completionUrl = '';
     let iFinished = false;
     let partnerFinished = false;
 
-    // Get Prolific ID from URL
+    // Get Prolific ID and participant type from URL
     const urlParams = new URLSearchParams(window.location.search);
     const prolificId = urlParams.get('PROLIFIC_PID') || urlParams.get('prolific_pid');
+    const participantType = urlParams.get('type') || 'A'; // A or B
 
     // Show specific screen
     function showScreen(name) {
@@ -450,17 +450,8 @@
         return;
       }
 
-      // Get completion URL from server
-      try {
-        const res = await fetch('/api/config');
-        const config = await res.json();
-        completionUrl = config.completionUrl;
-      } catch (e) {
-        console.error('Failed to get config:', e);
-      }
-
-      // Join the waiting room
-      socket.emit('join', prolificId);
+      // Join the waiting room with prolific ID and participant type
+      socket.emit('join', { prolificId, participantType });
     }
 
     // Socket events
@@ -502,8 +493,8 @@
         countdown.textContent = count;
         if (count <= 0) {
           clearInterval(interval);
-          // Redirect with Prolific ID
-          const url = completionUrl + (completionUrl.includes('?') ? '&' : '?') + 'PROLIFIC_PID=' + data.prolificId;
+          // Redirect with Prolific ID to their specific completion survey
+          const url = data.completionUrl + (data.completionUrl.includes('?') ? '&' : '?') + 'PROLIFIC_PID=' + data.prolificId;
           window.location.href = url;
         }
       }, 1000);

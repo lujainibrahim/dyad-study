@@ -14,8 +14,13 @@ if (!fs.existsSync(LOGS_DIR)) {
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Configuration - UPDATE THIS URL
-const COMPLETION_QUALTRICS_URL = 'https://yourschool.qualtrics.com/jfe/form/YOUR_SURVEY_ID';
+// Configuration - UPDATE THESE URLs
+// Type A = participant who talked to AI first
+// Type B = participant who did survey first
+const COMPLETION_URLS = {
+  A: 'https://yourschool.qualtrics.com/jfe/form/SURVEY_A_COMPLETION_ID',
+  B: 'https://yourschool.qualtrics.com/jfe/form/SURVEY_B_COMPLETION_ID'
+};
 
 // In-memory storage
 const waitingRoom = [];           // Participants waiting for a partner
@@ -29,17 +34,18 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// API endpoint to get completion URL (so we can configure it in one place)
+// API endpoint to get completion URLs
 app.get('/api/config', (req, res) => {
-  res.json({ completionUrl: COMPLETION_QUALTRICS_URL });
+  res.json({ completionUrls: COMPLETION_URLS });
 });
 
 io.on('connection', (socket) => {
   console.log(`New connection: ${socket.id}`);
 
-  // Participant joins with their Prolific ID
-  socket.on('join', (prolificId) => {
-    console.log(`Participant joined: ${prolificId}`);
+  // Participant joins with their Prolific ID and type (A or B)
+  socket.on('join', ({ prolificId, participantType }) => {
+    const type = participantType || 'A'; // Default to A if not specified
+    console.log(`Participant joined: ${prolificId} (Type ${type})`);
     
     // Check if someone is already waiting
     if (waitingRoom.length > 0) {
@@ -49,10 +55,11 @@ io.on('connection', (socket) => {
       // Create a unique pair ID
       const pairId = `pair_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      // Store the pair
+      // Store the pair with participant types
       activePairs.set(pairId, {
         participants: [partner.socket, socket],
         prolificIds: [partner.prolificId, prolificId],
+        participantTypes: [partner.participantType, type],
         messages: [],
         finishedCount: 0,
         startTime: new Date().toISOString()
@@ -73,12 +80,12 @@ io.on('connection', (socket) => {
         yourNumber: 2
       });
       
-      console.log(`Pair created: ${pairId} with ${partner.prolificId} and ${prolificId}`);
+      console.log(`Pair created: ${pairId} with ${partner.prolificId} (Type ${partner.participantType}) and ${prolificId} (Type ${type})`);
     } else {
-      // Add to waiting room
-      waitingRoom.push({ socket, prolificId });
+      // Add to waiting room with type
+      waitingRoom.push({ socket, prolificId, participantType: type });
       socket.emit('waiting');
-      console.log(`${prolificId} added to waiting room. Waiting: ${waitingRoom.length}`);
+      console.log(`${prolificId} (Type ${type}) added to waiting room. Waiting: ${waitingRoom.length}`);
     }
   });
 
@@ -135,13 +142,17 @@ io.on('connection', (socket) => {
       // Save chat log to file
       const chatLog = {
         pairId,
-        prolificIds: pair.prolificIds,
+        participants: pair.prolificIds.map((id, idx) => ({
+          prolificId: id,
+          type: pair.participantTypes[idx]
+        })),
         startTime: pair.startTime,
         endTime: new Date().toISOString(),
         messageCount: pair.messages.length,
         messages: pair.messages.map(m => ({
           ...m,
           senderProlificId: pair.prolificIds[m.sender - 1],
+          senderType: pair.participantTypes[m.sender - 1],
           timestamp: new Date(m.timestamp).toISOString()
         }))
       };
@@ -155,7 +166,9 @@ io.on('connection', (socket) => {
       
       pair.participants.forEach((p, idx) => {
         const prolificId = pair.prolificIds[idx];
-        p.emit('complete', { prolificId });
+        const participantType = pair.participantTypes[idx];
+        const completionUrl = COMPLETION_URLS[participantType] || COMPLETION_URLS.A;
+        p.emit('complete', { prolificId, completionUrl });
       });
       
       // Clean up
