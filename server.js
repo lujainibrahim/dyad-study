@@ -5,17 +5,150 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
+app.use(express.json());
 
-// Create chat_logs folder if it doesn't exist
+// Create folders if they don't exist
 const LOGS_DIR = path.join(__dirname, 'chat_logs');
+const SCHEDULE_FILE = path.join(__dirname, 'scheduled_sessions.json');
 if (!fs.existsSync(LOGS_DIR)) {
   fs.mkdirSync(LOGS_DIR);
 }
+
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Configuration
-const MIN_MESSAGES = 7; // Minimum messages before participants can finish
+// ============ CONFIGURATION ============
+const MIN_MESSAGES = 7;
+
+// Prolific API Configuration
+const PROLIFIC_API_TOKEN = process.env.PROLIFIC_API_TOKEN || 'bYEx2Sv_Cnyhadp2tjA4REuTUO1n7kKO3Kvcje3UEdvi1ht5QZ8-PiQybXuqyrLDxCQAcV4fYFKZumrL7NlDk1nKeii2nh7k_4NZhYz1IHNEORwiVBhe7h2n';
+const PROLIFIC_STUDY_IDS = {
+  A: '6968270c3c49d3e7e3271e79',
+  B: '69694a9982bb1223cd7331a2'
+};
+const CHAT_BASE_URL = process.env.CHAT_BASE_URL || 'https://dyad-study-production.up.railway.app';
+
+// ============ SCHEDULING SYSTEM ============
+
+// Load scheduled sessions from file
+function loadScheduledSessions() {
+  try {
+    if (fs.existsSync(SCHEDULE_FILE)) {
+      return JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error loading scheduled sessions:', e);
+  }
+  return { pending: [], matched: [], notified: [] };
+}
+
+// Save scheduled sessions to file
+function saveScheduledSessions(sessions) {
+  fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(sessions, null, 2));
+}
+
+// Send Prolific message to participant
+async function sendProlificMessage(studyId, participantId, message) {
+  try {
+    const response = await fetch(`https://api.prolific.com/api/v1/studies/${studyId}/messages/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${PROLIFIC_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        recipient_id: participantId,
+        body: message
+      })
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`Prolific API error: ${error}`);
+      return false;
+    }
+    
+    console.log(`Message sent to ${participantId} in study ${studyId}`);
+    return true;
+  } catch (e) {
+    console.error('Error sending Prolific message:', e);
+    return false;
+  }
+}
+
+// Check for scheduled sessions and send notifications
+async function checkScheduledSessions() {
+  const sessions = loadScheduledSessions();
+  const now = new Date();
+  const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+  
+  // Try to match pending participants
+  const pendingA = sessions.pending.filter(p => p.type === 'A');
+  const pendingB = sessions.pending.filter(p => p.type === 'B');
+  
+  for (const partA of pendingA) {
+    // Find a B partner with a matching time (within 5 minutes)
+    const partATime = new Date(partA.scheduledTime);
+    const matchingB = pendingB.find(b => {
+      const partBTime = new Date(b.scheduledTime);
+      return Math.abs(partATime - partBTime) <= 5 * 60 * 1000; // Within 5 minutes
+    });
+    
+    if (matchingB) {
+      // Create a matched pair
+      const matchTime = new Date(Math.max(partATime, new Date(matchingB.scheduledTime)));
+      sessions.matched.push({
+        partnerA: partA,
+        partnerB: matchingB,
+        scheduledTime: matchTime.toISOString(),
+        notified: false
+      });
+      
+      // Remove from pending
+      sessions.pending = sessions.pending.filter(p => 
+        p.odId !== partA.prolificId && p.prolificId !== matchingB.prolificId
+      );
+      
+      console.log(`Matched ${partA.prolificId} (A) with ${matchingB.prolificId} (B) for ${matchTime}`);
+    }
+  }
+  
+  // Check matched pairs for notification time
+  for (const match of sessions.matched) {
+    if (match.notified) continue;
+    
+    const scheduledTime = new Date(match.scheduledTime);
+    
+    // Send notification 5 minutes before scheduled time
+    if (scheduledTime <= fiveMinutesFromNow && scheduledTime > now) {
+      const chatLinkA = `${CHAT_BASE_URL}/?PROLIFIC_PID=${match.partnerA.prolificId}&type=A`;
+      const chatLinkB = `${CHAT_BASE_URL}/?PROLIFIC_PID=${match.partnerB.prolificId}&type=B`;
+      
+      const messageA = `Your chat session is starting soon! Please click this link to join the chat room: ${chatLinkA}`;
+      const messageB = `Your chat session is starting soon! Please click this link to join the chat room: ${chatLinkB}`;
+      
+      await sendProlificMessage(PROLIFIC_STUDY_IDS.A, match.partnerA.prolificId, messageA);
+      await sendProlificMessage(PROLIFIC_STUDY_IDS.B, match.partnerB.prolificId, messageB);
+      
+      match.notified = true;
+      sessions.notified.push({
+        ...match,
+        notifiedAt: new Date().toISOString()
+      });
+      
+      console.log(`Notified pair: ${match.partnerA.prolificId} & ${match.partnerB.prolificId}`);
+    }
+  }
+  
+  // Clean up old matched sessions that have been notified
+  sessions.matched = sessions.matched.filter(m => !m.notified);
+  
+  saveScheduledSessions(sessions);
+}
+
+// Run scheduler every minute
+setInterval(checkScheduledSessions, 60 * 1000);
+console.log('Scheduler started - checking every minute for scheduled sessions');
 
 // Generate a unique completion code
 function generateCompletionCode(prolificId, pairId) {
@@ -43,6 +176,85 @@ app.get('/', (req, res) => {
 // API endpoint to get config
 app.get('/api/config', (req, res) => {
   res.json({ minMessages: MIN_MESSAGES });
+});
+
+// ============ SCHEDULING API ENDPOINTS ============
+
+// Register a participant for a scheduled session
+// Called from Qualtrics when participant picks a time
+app.post('/api/schedule', (req, res) => {
+  const { prolificId, type, scheduledTime } = req.body;
+  
+  if (!prolificId || !type || !scheduledTime) {
+    return res.status(400).json({ error: 'Missing required fields: prolificId, type, scheduledTime' });
+  }
+  
+  if (!['A', 'B'].includes(type)) {
+    return res.status(400).json({ error: 'Type must be A or B' });
+  }
+  
+  const sessions = loadScheduledSessions();
+  
+  // Check if already registered
+  const existing = sessions.pending.find(p => p.prolificId === prolificId);
+  if (existing) {
+    existing.scheduledTime = scheduledTime;
+    existing.updatedAt = new Date().toISOString();
+  } else {
+    sessions.pending.push({
+      prolificId,
+      type,
+      scheduledTime,
+      registeredAt: new Date().toISOString()
+    });
+  }
+  
+  saveScheduledSessions(sessions);
+  
+  console.log(`Scheduled ${prolificId} (Type ${type}) for ${scheduledTime}`);
+  res.json({ success: true, message: 'Session scheduled' });
+});
+
+// Get available time slots (for the next 7 days)
+app.get('/api/timeslots', (req, res) => {
+  const slots = [];
+  const now = new Date();
+  
+  // Generate hourly slots for next 7 days (9 AM to 9 PM)
+  for (let day = 0; day < 7; day++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() + day);
+    
+    for (let hour = 9; hour <= 21; hour++) {
+      date.setHours(hour, 0, 0, 0);
+      if (date > now) {
+        slots.push({
+          time: date.toISOString(),
+          label: date.toLocaleString('en-US', { 
+            weekday: 'short', 
+            month: 'short', 
+            day: 'numeric', 
+            hour: 'numeric',
+            minute: '2-digit'
+          })
+        });
+      }
+    }
+  }
+  
+  res.json({ slots });
+});
+
+// Admin endpoint to view scheduled sessions
+app.get('/api/admin/sessions', (req, res) => {
+  const sessions = loadScheduledSessions();
+  res.json(sessions);
+});
+
+// Admin endpoint to manually trigger a check
+app.post('/api/admin/check', async (req, res) => {
+  await checkScheduledSessions();
+  res.json({ success: true, message: 'Check completed' });
 });
 
 io.on('connection', (socket) => {
