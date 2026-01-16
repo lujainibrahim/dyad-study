@@ -3,9 +3,48 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(express.json());
+
+// ============ EMAIL CONFIGURATION ============
+const EMAIL_TO = 'lujain@stanford.edu';  // Where to send chat logs
+const EMAIL_FROM = process.env.EMAIL_FROM || 'dyadstudy.notifications@gmail.com';
+const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD || '';  // Gmail App Password
+
+// Create email transporter
+const emailTransporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: EMAIL_FROM,
+    pass: EMAIL_PASSWORD
+  }
+});
+
+// Send chat log via email
+async function sendChatLogEmail(chatLog) {
+  if (!EMAIL_PASSWORD) {
+    console.log('Email not configured - skipping email send');
+    return;
+  }
+  
+  const participants = chatLog.participants.map(p => `${p.prolificId} (${p.type})`).join(' & ');
+  
+  const mailOptions = {
+    from: EMAIL_FROM,
+    to: EMAIL_TO,
+    subject: `Chat Log: ${participants}`,
+    text: `Chat completed!\n\nParticipants: ${participants}\nMessages: ${chatLog.messageCount}\nDuration: ${chatLog.startTime} to ${chatLog.endTime}\n\nFull log attached.`,
+    attachments: [{
+      filename: `${chatLog.pairId}.json`,
+      content: JSON.stringify(chatLog, null, 2)
+    }]
+  };
+  
+  await emailTransporter.sendMail(mailOptions);
+  console.log(`Email sent to ${EMAIL_TO}`);
+}
 
 // Create folders if they don't exist
 const LOGS_DIR = path.join(__dirname, 'chat_logs');
@@ -257,6 +296,20 @@ app.post('/api/admin/check', async (req, res) => {
   res.json({ success: true, message: 'Check completed' });
 });
 
+// Download all chat logs
+app.get('/api/admin/logs', (req, res) => {
+  try {
+    const files = fs.readdirSync(LOGS_DIR).filter(f => f.endsWith('.json'));
+    const logs = files.map(f => {
+      const content = fs.readFileSync(path.join(LOGS_DIR, f), 'utf8');
+      return JSON.parse(content);
+    });
+    res.json({ count: logs.length, logs });
+  } catch (e) {
+    res.json({ count: 0, logs: [], error: e.message });
+  }
+});
+
 io.on('connection', (socket) => {
   console.log(`New connection: ${socket.id}`);
 
@@ -392,6 +445,14 @@ io.on('connection', (socket) => {
         JSON.stringify(chatLog, null, 2)
       );
       console.log(`Chat log saved: ${filename}`);
+      
+      // Also log full chat to console (visible in Railway logs)
+      console.log('=== CHAT LOG START ===');
+      console.log(JSON.stringify(chatLog, null, 2));
+      console.log('=== CHAT LOG END ===');
+      
+      // Send email with chat log
+      sendChatLogEmail(chatLog).catch(err => console.error('Email error:', err));
       
       pair.participants.forEach((p, idx) => {
         const prolificId = pair.prolificIds[idx];
