@@ -47,10 +47,18 @@ async function sendChatLogEmail(chatLog) {
 }
 
 // Create folders if they don't exist
-const LOGS_DIR = path.join(__dirname, 'chat_logs');
-const SCHEDULE_FILE = path.join(__dirname, 'scheduled_sessions.json');
-if (!fs.existsSync(LOGS_DIR)) {
-  fs.mkdirSync(LOGS_DIR);
+// Use Railway volume path if available, otherwise local folder
+const LOGS_DIR = process.env.LOGS_DIR || '/app/chat_logs';
+const SCHEDULE_FILE = path.join(LOGS_DIR, 'scheduled_sessions.json');
+
+// Create logs directory if it doesn't exist
+try {
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+  console.log(`Chat logs will be saved to: ${LOGS_DIR}`);
+} catch (e) {
+  console.error(`Could not create logs directory: ${e.message}`);
 }
 
 const server = http.createServer(app);
@@ -201,7 +209,9 @@ function generateCompletionCode(prolificId, pairId) {
 }
 
 // In-memory storage
-const waitingRoom = [];           // Participants waiting for a partner
+// Separate waiting rooms: A waits for B, B waits for A
+const waitingRoomA = [];          // Type A participants waiting for a Type B partner
+const waitingRoomB = [];          // Type B participants waiting for a Type A partner
 const activePairs = new Map();    // pairId -> { participants: [socket1, socket2], prolificIds: [id1, id2] }
 const socketToPair = new Map();   // socketId -> pairId
 
@@ -310,6 +320,17 @@ app.get('/api/admin/logs', (req, res) => {
   }
 });
 
+// Check waiting room status
+app.get('/api/admin/status', (req, res) => {
+  res.json({
+    waitingRoomA: waitingRoomA.length,
+    waitingRoomB: waitingRoomB.length,
+    activePairs: activePairs.size,
+    waitingA: waitingRoomA.map(w => ({ prolificId: w.prolificId, type: w.participantType })),
+    waitingB: waitingRoomB.map(w => ({ prolificId: w.prolificId, type: w.participantType }))
+  });
+});
+
 io.on('connection', (socket) => {
   console.log(`New connection: ${socket.id}`);
 
@@ -318,10 +339,15 @@ io.on('connection', (socket) => {
     const type = participantType || 'A'; // Default to A if not specified
     console.log(`Participant joined: ${prolificId} (Type ${type})`);
     
-    // Check if someone is already waiting
-    if (waitingRoom.length > 0) {
-      // Match with the first waiting participant
-      const partner = waitingRoom.shift();
+    // Determine which waiting room to check and which to join
+    // Type A looks for Type B partners, and vice versa
+    const partnerWaitingRoom = type === 'A' ? waitingRoomB : waitingRoomA;
+    const myWaitingRoom = type === 'A' ? waitingRoomA : waitingRoomB;
+    
+    // Check if a partner of the opposite type is waiting
+    if (partnerWaitingRoom.length > 0) {
+      // Match with the first waiting partner of opposite type
+      const partner = partnerWaitingRoom.shift();
       
       // Create a unique pair ID
       const pairId = `pair_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -353,10 +379,10 @@ io.on('connection', (socket) => {
       
       console.log(`Pair created: ${pairId} with ${partner.prolificId} (Type ${partner.participantType}) and ${prolificId} (Type ${type})`);
     } else {
-      // Add to waiting room with type
-      waitingRoom.push({ socket, prolificId, participantType: type });
+      // Add to my waiting room (waiting for opposite type)
+      myWaitingRoom.push({ socket, prolificId, participantType: type });
       socket.emit('waiting');
-      console.log(`${prolificId} (Type ${type}) added to waiting room. Waiting: ${waitingRoom.length}`);
+      console.log(`${prolificId} (Type ${type}) added to waiting room. Waiting A: ${waitingRoomA.length}, Waiting B: ${waitingRoomB.length}`);
     }
   });
 
@@ -472,11 +498,19 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`Disconnected: ${socket.id}`);
     
-    // Remove from waiting room if there
-    const waitingIndex = waitingRoom.findIndex(w => w.socket.id === socket.id);
-    if (waitingIndex !== -1) {
-      waitingRoom.splice(waitingIndex, 1);
-      console.log(`Removed from waiting room. Waiting: ${waitingRoom.length}`);
+    // Remove from waiting room A if there
+    const waitingIndexA = waitingRoomA.findIndex(w => w.socket.id === socket.id);
+    if (waitingIndexA !== -1) {
+      waitingRoomA.splice(waitingIndexA, 1);
+      console.log(`Removed from waiting room A. Waiting A: ${waitingRoomA.length}, Waiting B: ${waitingRoomB.length}`);
+      return;
+    }
+    
+    // Remove from waiting room B if there
+    const waitingIndexB = waitingRoomB.findIndex(w => w.socket.id === socket.id);
+    if (waitingIndexB !== -1) {
+      waitingRoomB.splice(waitingIndexB, 1);
+      console.log(`Removed from waiting room B. Waiting A: ${waitingRoomA.length}, Waiting B: ${waitingRoomB.length}`);
       return;
     }
     
