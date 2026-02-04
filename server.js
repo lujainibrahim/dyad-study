@@ -7,27 +7,36 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-// ============ GOOGLE SHEETS LOGGING ============
-const GOOGLE_SHEET_WEBHOOK = 'https://script.google.com/macros/s/AKfycbzGzINAVd5PMUaBAA5CXmiPqkztBN4M6xL4rIsgKl6ZyOep1L04nBCg1_EZjMoaM_QK/exec';
+// ============ SUPABASE LOGGING ============
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lqmacprqbiwwfariawjf.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 
-// Send chat log to Google Sheets
-async function sendChatLogToSheet(chatLog) {
+// Send chat log to Supabase
+async function sendChatLogToSupabase(chatLog) {
   try {
-    const response = await fetch(GOOGLE_SHEET_WEBHOOK, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/chat_logs`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(chatLog)
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        data: chatLog  // Store entire chat log as JSON
+      })
     });
     
-    if (response.ok) {
-      console.log('Chat log sent to Google Sheets!');
+    if (response.ok || response.status === 201) {
+      console.log('Chat log saved to Supabase!');
       return true;
     } else {
-      console.error('Failed to send to Google Sheets:', response.status);
+      const error = await response.text();
+      console.error('Failed to save to Supabase:', response.status, error);
       return false;
     }
   } catch (e) {
-    console.error('Error sending to Google Sheets:', e);
+    console.error('Error saving to Supabase:', e);
     return false;
   }
 }
@@ -463,8 +472,8 @@ io.on('connection', (socket) => {
       console.log(JSON.stringify(chatLog, null, 2));
       console.log('=== CHAT LOG END ===');
       
-      // Send chat log to Google Sheets
-      sendChatLogToSheet(chatLog).catch(err => console.error('Sheets error:', err));
+      // Send chat log to Supabase
+      sendChatLogToSupabase(chatLog).catch(err => console.error('Supabase error:', err));
       
       pair.participants.forEach((p, idx) => {
         const prolificId = pair.prolificIds[idx];
