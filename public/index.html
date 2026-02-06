@@ -376,7 +376,7 @@
           <button class="btn btn-primary" id="send-btn">Send</button>
         </div>
         <div class="finish-row">
-          <div class="finish-status" id="finish-status">Exchange at least 7 messages to finish (0/7)</div>
+          <div class="finish-status" id="finish-status">You: 0/7 msgs | Partner: 0/7 msgs</div>
           <button class="btn btn-finish" id="finish-btn" disabled>Finish</button>
         </div>
       </div>
@@ -425,7 +425,8 @@
     let iFinished = false;
     let partnerFinished = false;
     let canFinish = false;
-    let messageCount = 0;
+    let myMessageCount = 0;
+    let partnerMessageCount = 0;
     const MIN_MESSAGES = 7;
 
     // Get Prolific ID and participant type from URL
@@ -471,7 +472,7 @@
         finishStatus.textContent = 'You can now finish the chat when ready';
         finishStatus.classList.add('ready');
       } else {
-        finishStatus.textContent = `Exchange at least ${MIN_MESSAGES} messages to finish (${messageCount}/${MIN_MESSAGES})`;
+        finishStatus.textContent = `You: ${myMessageCount}/${MIN_MESSAGES} msgs | Partner: ${partnerMessageCount}/${MIN_MESSAGES} msgs`;
       }
     }
 
@@ -501,8 +502,9 @@
       const isYou = data.sender === myNumber;
       addMessage(data.text, isYou);
       
-      // Update message count
-      messageCount = data.messageCount || messageCount + 1;
+      // Update message counts
+      myMessageCount = data.yourMessageCount || myMessageCount;
+      partnerMessageCount = data.partnerMessageCount || partnerMessageCount;
       if (data.canFinish) {
         canFinish = true;
         finishBtn.disabled = false;

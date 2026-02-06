@@ -401,16 +401,29 @@ io.on('connection', (socket) => {
     
     pair.messages.push(messageData);
     
-    // Send to both participants with message count
-    const messageCount = pair.messages.length;
-    const canFinish = messageCount >= MIN_MESSAGES;
+    // Track messages per participant
+    if (!pair.messageCounts) {
+      pair.messageCounts = [0, 0];
+    }
+    pair.messageCounts[senderIndex]++;
     
-    pair.participants.forEach(p => {
-      p.emit('message', { ...messageData, messageCount, canFinish });
+    // Check if BOTH participants have sent at least MIN_MESSAGES each
+    const canFinish = pair.messageCounts[0] >= MIN_MESSAGES && pair.messageCounts[1] >= MIN_MESSAGES;
+    const wasAbleToFinish = (pair.messageCounts[0] - (senderIndex === 0 ? 1 : 0)) >= MIN_MESSAGES && 
+                            (pair.messageCounts[1] - (senderIndex === 1 ? 1 : 0)) >= MIN_MESSAGES;
+    
+    // Send to both participants with message counts
+    pair.participants.forEach((p, idx) => {
+      p.emit('message', { 
+        ...messageData, 
+        yourMessageCount: pair.messageCounts[idx],
+        partnerMessageCount: pair.messageCounts[1 - idx],
+        canFinish 
+      });
     });
     
-    // Notify when minimum is first reached
-    if (messageCount === MIN_MESSAGES) {
+    // Notify when both reach minimum for the first time
+    if (canFinish && !wasAbleToFinish) {
       pair.participants.forEach(p => {
         p.emit('canFinish');
       });
