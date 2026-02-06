@@ -205,6 +205,10 @@ const waitingRoomA = [];          // Type A participants waiting for a Type B pa
 const waitingRoomB = [];          // Type B participants waiting for a Type A partner
 const activePairs = new Map();    // pairId -> { participants: [socket1, socket2], prolificIds: [id1, id2] }
 const socketToPair = new Map();   // socketId -> pairId
+const waitingTimeouts = new Map(); // socketId -> timeout
+
+// Waiting room timeout (5 minutes)
+const WAITING_TIMEOUT_MS = 5 * 60 * 1000;
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -340,6 +344,12 @@ io.on('connection', (socket) => {
       // Match with the first waiting partner of opposite type
       const partner = partnerWaitingRoom.shift();
       
+      // Clear partner's waiting timeout since they're now matched
+      if (waitingTimeouts.has(partner.socket.id)) {
+        clearTimeout(waitingTimeouts.get(partner.socket.id));
+        waitingTimeouts.delete(partner.socket.id);
+      }
+      
       // Create a unique pair ID
       const pairId = `pair_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
@@ -374,6 +384,27 @@ io.on('connection', (socket) => {
       myWaitingRoom.push({ socket, prolificId, participantType: type });
       socket.emit('waiting');
       console.log(`${prolificId} (Type ${type}) added to waiting room. Waiting A: ${waitingRoomA.length}, Waiting B: ${waitingRoomB.length}`);
+      
+      // Set timeout to expire waiting after 5 minutes
+      const timeoutId = setTimeout(() => {
+        // Check if still in waiting room
+        const inWaitingA = waitingRoomA.findIndex(w => w.socket.id === socket.id);
+        const inWaitingB = waitingRoomB.findIndex(w => w.socket.id === socket.id);
+        
+        if (inWaitingA !== -1) {
+          waitingRoomA.splice(inWaitingA, 1);
+          socket.emit('waitingTimeout');
+          console.log(`${prolificId} (Type ${type}) timed out waiting. Removed from waiting room.`);
+        } else if (inWaitingB !== -1) {
+          waitingRoomB.splice(inWaitingB, 1);
+          socket.emit('waitingTimeout');
+          console.log(`${prolificId} (Type ${type}) timed out waiting. Removed from waiting room.`);
+        }
+        
+        waitingTimeouts.delete(socket.id);
+      }, WAITING_TIMEOUT_MS);
+      
+      waitingTimeouts.set(socket.id, timeoutId);
     }
   });
 
@@ -501,6 +532,12 @@ io.on('connection', (socket) => {
   // Handle disconnection
   socket.on('disconnect', () => {
     console.log(`Disconnected: ${socket.id}`);
+    
+    // Clear any waiting timeout
+    if (waitingTimeouts.has(socket.id)) {
+      clearTimeout(waitingTimeouts.get(socket.id));
+      waitingTimeouts.delete(socket.id);
+    }
     
     // Remove from waiting room A if there
     const waitingIndexA = waitingRoomA.findIndex(w => w.socket.id === socket.id);
