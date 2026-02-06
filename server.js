@@ -368,15 +368,18 @@ io.on('connection', (socket) => {
       socketToPair.set(socket.id, pairId);
       
       // Notify both participants they're matched
+      // Include their type so frontend knows if they're A or B
       partner.socket.emit('matched', { 
         pairId, 
         partnerNumber: 2,
-        yourNumber: 1
+        yourNumber: 1,
+        yourType: partner.participantType
       });
       socket.emit('matched', { 
         pairId, 
         partnerNumber: 1,
-        yourNumber: 2
+        yourNumber: 2,
+        yourType: type
       });
       
       console.log(`Pair created: ${pairId} with ${partner.prolificId} (Type ${partner.participantType}) and ${prolificId} (Type ${type})`);
@@ -420,10 +423,17 @@ io.on('connection', (socket) => {
     // Find which participant number this is
     const senderIndex = pair.participants.findIndex(p => p.id === socket.id);
     const senderNumber = senderIndex + 1;
+    const senderType = pair.participantTypes[senderIndex];
     
     // Track messages per participant
     if (!pair.messageCounts) {
       pair.messageCounts = [0, 0];
+    }
+    
+    // Person B can only send after Person A sends first
+    if (senderType === 'B' && !pair.aHasSentFirst) {
+      socket.emit('waitForA');
+      return;
     }
     
     // Block if sender already hit max
@@ -440,6 +450,17 @@ io.on('connection', (socket) => {
     
     pair.messages.push(messageData);
     pair.messageCounts[senderIndex]++;
+    
+    // Track if A has sent their first message (to unlock B)
+    if (senderType === 'A' && !pair.aHasSentFirst) {
+      pair.aHasSentFirst = true;
+      // Notify B that they can now send
+      pair.participants.forEach((p, idx) => {
+        if (pair.participantTypes[idx] === 'B') {
+          p.emit('aStarted');
+        }
+      });
+    }
     
     // Check if BOTH participants have sent at least MIN_MESSAGES each
     const canFinish = pair.messageCounts[0] >= MIN_MESSAGES && pair.messageCounts[1] >= MIN_MESSAGES;

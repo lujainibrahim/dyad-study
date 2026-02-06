@@ -457,12 +457,14 @@
     const completionCodeEl = document.getElementById('completion-code');
 
     let myNumber = null;
+    let myType = null;
     let iFinished = false;
     let partnerFinished = false;
     let canFinish = false;
     let myMessageCount = 0;
     let partnerMessageCount = 0;
     let myMaxReached = false;
+    let waitingForA = false;
     const MIN_MESSAGES = 5;
     const MAX_MESSAGES = 10;
 
@@ -539,7 +541,19 @@
 
     socket.on('matched', (data) => {
       myNumber = data.yourNumber;
+      myType = data.yourType;
       showScreen('chat');
+      
+      // Show instructions based on type
+      if (myType === 'A') {
+        addSystemMessage('Remember: Start by sharing the topic that has been on your mind.');
+      } else {
+        // Type B - disable input until A sends first
+        messageInput.disabled = true;
+        sendBtn.disabled = true;
+        messageInput.placeholder = 'Waiting for your partner to share their topic...';
+        addSystemMessage('Your partner will share a topic with you. Please wait for their message.');
+      }
     });
 
     socket.on('message', (data) => {
@@ -571,6 +585,21 @@
       messageInput.disabled = true;
       sendBtn.disabled = true;
       messageInput.placeholder = 'Maximum messages reached';
+    });
+    
+    socket.on('aStarted', () => {
+      // B can now send messages
+      if (myType === 'B') {
+        messageInput.disabled = false;
+        sendBtn.disabled = false;
+        messageInput.placeholder = 'Type a message...';
+        addSystemMessage('You can now respond to your partner.');
+      }
+    });
+    
+    socket.on('waitForA', () => {
+      // B tried to send before A - shouldn't happen with UI disabled, but just in case
+      addSystemMessage('Please wait for your partner to share their topic first.');
     });
 
     socket.on('canFinish', () => {
