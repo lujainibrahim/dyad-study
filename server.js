@@ -60,7 +60,8 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 // ============ CONFIGURATION ============
-const MIN_MESSAGES = 7;
+const MIN_MESSAGES = 5;
+const MAX_MESSAGES = 10;
 
 // Prolific API Configuration
 const PROLIFIC_API_TOKEN = process.env.PROLIFIC_API_TOKEN || 'bYEx2Sv_Cnyhadp2tjA4REuTUO1n7kKO3Kvcje3UEdvi1ht5QZ8-PiQybXuqyrLDxCQAcV4fYFKZumrL7NlDk1nKeii2nh7k_4NZhYz1IHNEORwiVBhe7h2n';
@@ -219,7 +220,7 @@ app.get('/', (req, res) => {
 
 // API endpoint to get config
 app.get('/api/config', (req, res) => {
-  res.json({ minMessages: MIN_MESSAGES });
+  res.json({ minMessages: MIN_MESSAGES, maxMessages: MAX_MESSAGES });
 });
 
 // ============ SCHEDULING API ENDPOINTS ============
@@ -420,6 +421,17 @@ io.on('connection', (socket) => {
     const senderIndex = pair.participants.findIndex(p => p.id === socket.id);
     const senderNumber = senderIndex + 1;
     
+    // Track messages per participant
+    if (!pair.messageCounts) {
+      pair.messageCounts = [0, 0];
+    }
+    
+    // Block if sender already hit max
+    if (pair.messageCounts[senderIndex] >= MAX_MESSAGES) {
+      socket.emit('maxReached');
+      return;
+    }
+    
     const messageData = {
       text,
       sender: senderNumber,
@@ -427,11 +439,6 @@ io.on('connection', (socket) => {
     };
     
     pair.messages.push(messageData);
-    
-    // Track messages per participant
-    if (!pair.messageCounts) {
-      pair.messageCounts = [0, 0];
-    }
     pair.messageCounts[senderIndex]++;
     
     // Check if BOTH participants have sent at least MIN_MESSAGES each
@@ -439,13 +446,18 @@ io.on('connection', (socket) => {
     const wasAbleToFinish = (pair.messageCounts[0] - (senderIndex === 0 ? 1 : 0)) >= MIN_MESSAGES && 
                             (pair.messageCounts[1] - (senderIndex === 1 ? 1 : 0)) >= MIN_MESSAGES;
     
+    // Check if both hit max - auto finish
+    const bothAtMax = pair.messageCounts[0] >= MAX_MESSAGES && pair.messageCounts[1] >= MAX_MESSAGES;
+    
     // Send to both participants with message counts
     pair.participants.forEach((p, idx) => {
       p.emit('message', { 
         ...messageData, 
         yourMessageCount: pair.messageCounts[idx],
         partnerMessageCount: pair.messageCounts[1 - idx],
-        canFinish 
+        canFinish,
+        yourMaxReached: pair.messageCounts[idx] >= MAX_MESSAGES,
+        bothAtMax
       });
     });
     
