@@ -192,15 +192,11 @@ async function checkScheduledSessions() {
 setInterval(checkScheduledSessions, 60 * 1000);
 console.log('Scheduler started - checking every minute for scheduled sessions');
 
-// Generate a unique completion code
-function generateCompletionCode(prolificId, pairId) {
-  const hash = require('crypto')
-    .createHash('sha256')
-    .update(prolificId + pairId + 'secret-salt')
-    .digest('hex')
-    .substring(0, 8)
-    .toUpperCase();
-  return `CHAT-${hash}`;
+// Fixed completion code for all participants
+const COMPLETION_CODE = 'CHAT-DYAD2026';
+
+function generateCompletionCode() {
+  return COMPLETION_CODE;
 }
 
 // In-memory storage
@@ -460,7 +456,7 @@ io.on('connection', (socket) => {
         participants: pair.prolificIds.map((id, idx) => ({
           prolificId: id,
           type: pair.participantTypes[idx],
-          completionCode: generateCompletionCode(id, pairId)
+          completionCode: generateCompletionCode()
         })),
         startTime: pair.startTime,
         endTime: new Date().toISOString(),
@@ -490,7 +486,7 @@ io.on('connection', (socket) => {
       
       pair.participants.forEach((p, idx) => {
         const prolificId = pair.prolificIds[idx];
-        const completionCode = generateCompletionCode(prolificId, pairId);
+        const completionCode = generateCompletionCode();
         p.emit('complete', { prolificId, completionCode });
       });
       
