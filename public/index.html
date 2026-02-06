@@ -292,6 +292,29 @@
       line-height: 1.6;
     }
 
+    /* Timeout Screen */
+    #timeout-screen {
+      background: var(--bg);
+    }
+
+    .timeout-content {
+      text-align: center;
+      max-width: 450px;
+      padding: 20px;
+    }
+
+    .timeout-content h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: #f59e0b;
+    }
+
+    .timeout-content p {
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 0.5rem;
+    }
+
     /* Complete Screen */
     #complete-screen {
       background: 
@@ -391,6 +414,16 @@
     </div>
   </div>
 
+  <!-- Timeout Screen -->
+  <div id="timeout-screen" class="screen">
+    <div class="timeout-content">
+      <h1>Partner Not Available</h1>
+      <p>Unfortunately, your partner did not join within the time limit.</p>
+      <p><strong>Please return this study on Prolific.</strong> You will not be penalized.</p>
+      <p style="margin-top: 20px; color: #666;">Thank you for your patience. You may be eligible to participate again at another time.</p>
+    </div>
+  </div>
+
   <!-- Complete Screen -->
   <div id="complete-screen" class="screen">
     <div class="complete-content">
@@ -410,6 +443,7 @@
       waiting: document.getElementById('waiting-screen'),
       chat: document.getElementById('chat-screen'),
       error: document.getElementById('error-screen'),
+      timeout: document.getElementById('timeout-screen'),
       complete: document.getElementById('complete-screen')
     };
 
@@ -491,6 +525,10 @@
     // Socket events
     socket.on('waiting', () => {
       showScreen('waiting');
+    });
+
+    socket.on('waitingTimeout', () => {
+      showScreen('timeout');
     });
 
     socket.on('matched', (data) => {
