@@ -399,7 +399,7 @@
           <button class="btn btn-primary" id="send-btn">Send</button>
         </div>
         <div class="finish-row">
-          <div class="finish-status" id="finish-status">You: 0/7 msgs | Partner: 0/7 msgs</div>
+          <div class="finish-status" id="finish-status">You: 0/5 msgs | Partner: 0/5 msgs</div>
           <button class="btn btn-finish" id="finish-btn" disabled>Finish</button>
         </div>
       </div>
@@ -462,7 +462,9 @@
     let canFinish = false;
     let myMessageCount = 0;
     let partnerMessageCount = 0;
-    const MIN_MESSAGES = 7;
+    let myMaxReached = false;
+    const MIN_MESSAGES = 5;
+    const MAX_MESSAGES = 10;
 
     // Get Prolific ID and participant type from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -502,6 +504,9 @@
         finishStatus.textContent = 'Waiting for your partner to finish...';
       } else if (partnerFinished) {
         finishStatus.textContent = 'Your partner is ready to finish';
+        finishStatus.classList.add('ready');
+      } else if (myMaxReached) {
+        finishStatus.textContent = `You've sent ${MAX_MESSAGES} messages. Click Finish when ready.`;
         finishStatus.classList.add('ready');
       } else if (canFinish) {
         finishStatus.textContent = 'You can now finish the chat when ready';
@@ -548,7 +553,24 @@
         canFinish = true;
         finishBtn.disabled = false;
       }
+      
+      // Check if max reached
+      if (data.yourMaxReached) {
+        myMaxReached = true;
+        messageInput.disabled = true;
+        sendBtn.disabled = true;
+        messageInput.placeholder = 'Maximum messages reached';
+        addSystemMessage(`You've reached the maximum of ${MAX_MESSAGES} messages.`);
+      }
+      
       updateFinishStatus();
+    });
+    
+    socket.on('maxReached', () => {
+      myMaxReached = true;
+      messageInput.disabled = true;
+      sendBtn.disabled = true;
+      messageInput.placeholder = 'Maximum messages reached';
     });
 
     socket.on('canFinish', () => {
